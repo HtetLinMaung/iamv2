@@ -1,0 +1,135 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Menu {
+  id        String   @id @default(uuid())
+  status    Int      @default(1)
+  createdBy String   @default("")
+  creater   String   @default("")
+  updatedBy String   @default("")
+  updater   String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+  appid     String
+  name      String
+  level     Int      @default(1)
+  parentid  String?
+  parent    Menu?    @relation("SelfMenu", fields: [parentid], references: [id])
+  menus     Menu[]   @relation("SelfMenu")
+}
+
+model Role {
+  id            String         @id @default(uuid())
+  status        Int            @default(1)
+  createdBy     String         @default("")
+  creater       String         @default("")
+  updatedBy     String         @default("")
+  updater       String         @default("")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @default(now())
+  appid         String
+  name          String
+  description   String
+  userRoles     UserRole[]
+  roleResources RoleResource[]
+}
+
+model RoleResource {
+  id         String   @id @default(uuid())
+  status     Int      @default(1)
+  createdBy  String   @default("")
+  creater    String   @default("")
+  updatedBy  String   @default("")
+  updater    String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now())
+  roleid     String
+  resourceid String
+  permission String   @default("crud")
+  role       Role     @relation(fields: [roleid], references: [id])
+  resource   Resource @relation(fields: [resourceid], references: [id])
+}
+
+model Resource {
+  id            String         @id @default(uuid())
+  status        Int            @default(1)
+  createdBy     String         @default("")
+  creater       String         @default("")
+  updatedBy     String         @default("")
+  updater       String         @default("")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @default(now())
+  appid         String
+  name          String
+  type          String
+  ref           String
+  roleResources RoleResource[]
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  status    Int      @default(1)
+  createdBy String   @default("")
+  creater   String   @default("")
+  updatedBy String   @default("")
+  updater   String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+  userid    String
+  roleid    String
+  user      User     @relation(fields: [userid], references: [id])
+  role      Role     @relation(fields: [roleid], references: [id])
+}
+
+model User {
+  id             String        @id @default(uuid())
+  status         Int           @default(1)
+  createdBy      String        @default("")
+  creater        String        @default("")
+  updatedBy      String        @default("")
+  updater        String        @default("")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @default(now())
+  appid          String
+  organizationid String?
+  firstname      String
+  lastname       String
+  fullname       String
+  username       String
+  password       String
+  twofactor      Boolean       @default(false)
+  profile        String?
+  email          String?
+  mobile         String?
+  address        String?
+  dob            String?
+  level          Int           @default(1)
+  accstatus      String        @default("active")
+  organization   Organization? @relation(fields: [organizationid], references: [id])
+  userRoles      UserRole[]
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  status    Int      @default(1)
+  createdBy String   @default("")
+  creater   String   @default("")
+  updatedBy String   @default("")
+  updater   String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+  appid     String
+  name      String
+  website   String?
+  address   String?
+  users     User[]
+}

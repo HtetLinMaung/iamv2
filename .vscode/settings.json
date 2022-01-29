@@ -1,0 +1,14 @@
+{
+  "sqltools.connections": [
+    {
+      "previewLimit": 50,
+      "server": "150.95.82.125",
+      "port": 5433,
+      "driver": "PostgreSQL",
+      "name": "Cloud Postgres",
+      "database": "iamv2",
+      "username": "hlm",
+      "password": "P@ssword"
+    }
+  ]
+}
