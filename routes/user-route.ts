@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import isAuth from "../middlewares/is-auth";
 import { writeDataUrlToFile } from "../utils/file-utils";
 import {
+  BAD_REQUEST,
   CREATED,
   NOT_FOUND,
   OK,
@@ -129,8 +130,21 @@ router
       if (req.tokenData.appid === "iamv2") {
         appid = req.body.appid;
       }
+      let user = await prisma.user.findFirst({
+        where: {
+          appid,
+          username,
+          status: 1,
+        },
+      });
+      if (user) {
+        return res.status(BAD_REQUEST.code).json({
+          ...BAD_REQUEST,
+          message: "User already exists",
+        });
+      }
       const hashedPwd = await bcrypt.hash(password, 10);
-      let user = await prisma.user.create({
+      user = await prisma.user.create({
         data: {
           username,
           password: hashedPwd,
