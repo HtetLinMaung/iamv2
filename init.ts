@@ -31,12 +31,13 @@ export default async function init() {
         fullname: "Htet Lin Maung",
         username: "admin",
         password: hashedPwd,
+        level: 100,
       },
     });
   } else {
     await prisma.user.updateMany({
       where,
-      data: { password: hashedPwd },
+      data: { password: hashedPwd, level: 100 },
     });
   }
 

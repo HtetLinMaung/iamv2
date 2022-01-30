@@ -46,8 +46,6 @@ router
         "mobile",
         "accstatus",
         "appid",
-        "createdat",
-        "updatedat",
         "createdBy",
         "updatedBy",
         "creater",
@@ -55,11 +53,18 @@ router
         "address",
         "dob",
       ]);
-      console.log(prismaQuery);
+
       if (req.tokenData.appid !== "iamv2") {
         prismaQuery.where.appid = req.tokenData.appid;
       }
+      if (req.tokenData.level < 100) {
+        prismaQuery.where.createdBy = req.tokenData.userid;
+      }
       const users = await prisma.user.findMany(prismaQuery);
+      const data = aliasData(
+        users,
+        (req.query.select as string) || (req.query.projections as string)
+      );
       if (req.query.page && req.query.per_page) {
         const page = parseInt(req.query.page as string, 10);
         const per_page = parseInt(req.query.per_page as string, 10);
@@ -68,12 +73,10 @@ router
         delete prismaQuery.select;
         const total = await prisma.user.count(prismaQuery);
 
-        const page_counts = Math.ceil(
-          total / parseInt(req.query.per_page as string)
-        );
+        const page_counts = Math.ceil(total / per_page);
         return res.json({
           ...OK,
-          data: aliasData(users, req.query.select as string),
+          data,
           page_counts,
           total,
           page,
@@ -81,7 +84,10 @@ router
         });
       }
 
-      res.json({ ...OK, data: aliasData(users, req.query.select as string) });
+      res.json({
+        ...OK,
+        data,
+      });
       logger.info("get all users success");
     } catch (err) {
       logger.error(`Error: ${err}`);
@@ -154,7 +160,7 @@ router
         });
       }
 
-      res.json({ ...CREATED, data: user });
+      res.status(CREATED.code).json({ ...CREATED, data: user });
       logger.info("User created successfully");
     } catch (err) {
       logger.error(`Error: ${err}`);
@@ -167,6 +173,7 @@ router
   .get(isAuth, async (req, res) => {
     try {
       logger.info("Get user by id");
+      logger.info(`Request Params: ${JSON.stringify(req.params)}`);
       logger.info(`Request Query: ${JSON.stringify(req.query)}`);
       const isAvailable = await checkResourceAvailable(
         req.tokenData,
@@ -180,14 +187,14 @@ router
           message: "You don't have permission to access this resource",
         });
       }
-      const prismaQuery = expressRequestQueryToPrismaQuery(req.query, []);
-
+      const prismaQuery = expressRequestQueryToPrismaQuery(req.query);
+      const where: any = { id: req.params.id, status: 1 };
+      if (req.tokenData.level < 100) {
+        where.createdBy = req.tokenData.userid;
+      }
       const user = await prisma.user.findFirst({
         select: prismaQuery.select,
-        where: {
-          id: req.params.id,
-          status: 1,
-        },
+        where,
       });
       if (!user) {
         return res.status(NOT_FOUND.code).json({
@@ -195,7 +202,13 @@ router
           message: "User not found",
         });
       }
-      res.json({ ...OK, data: user });
+      res.json({
+        ...OK,
+        data: aliasData(
+          [user],
+          (req.query.select as string) || (req.query.projections as string)
+        )[0],
+      });
       logger.info("get user by id success");
     } catch (err) {
       logger.error(`Error: ${err}`);
@@ -205,7 +218,7 @@ router
   .put(isAuth, async (req, res) => {
     try {
       logger.info("Update user by id");
-      logger.info(`Request Query: ${JSON.stringify(req.query)}`);
+      logger.info(`Request Params: ${JSON.stringify(req.params)}`);
       logger.info(`Request Body: ${JSON.stringify(req.body)}`);
       const isAvailable = await checkResourceAvailable(
         req.tokenData,
@@ -237,8 +250,30 @@ router
       if (req.tokenData.appid === "iamv2") {
         appid = req.body.appid;
       }
+      let user = await prisma.user.findFirst({
+        where: {
+          id: req.params.id,
+          status: 1,
+        },
+      });
+      if (!user) {
+        return res.status(NOT_FOUND.code).json({
+          ...NOT_FOUND,
+          message: "User not found",
+        });
+      }
+      if (
+        req.tokenData.level < 100 &&
+        user.createdBy !== req.tokenData.userid
+      ) {
+        return res.status(UNAUTHORIZED.code).json({
+          ...UNAUTHORIZED,
+          message: "You don't have permission to access this resource",
+        });
+      }
+
       const hashedPwd = await bcrypt.hash(password, 10);
-      let user = await prisma.user.update({
+      user = await prisma.user.update({
         where: { id: req.params.id },
         data: {
           username,
@@ -276,7 +311,7 @@ router
   .delete(isAuth, async (req, res) => {
     try {
       logger.info("Delete user by id");
-      logger.info(`Request Query: ${JSON.stringify(req.query)}`);
+      logger.info(`Request Params: ${JSON.stringify(req.params)}`);
       const isAvailable = await checkResourceAvailable(
         req.tokenData,
         "schema",
@@ -297,6 +332,15 @@ router
         return res.status(NOT_FOUND.code).json({
           ...NOT_FOUND,
           message: "User not found",
+        });
+      }
+      if (
+        req.tokenData.level < 100 &&
+        user.createdBy !== req.tokenData.userid
+      ) {
+        return res.status(UNAUTHORIZED.code).json({
+          ...UNAUTHORIZED,
+          message: "You don't have permission to access this resource",
         });
       }
       await prisma.user.update({

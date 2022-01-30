@@ -1,17 +1,21 @@
+import logger from "./log-utils";
+
 const parseValue = (v: string) =>
   !isNaN(parseInt(v, 10)) ? parseInt(v, 10) : v;
 
 export const expressRequestQueryToPrismaQuery = (
   query: any,
-  search_colums: string[]
+  search_colums: string[] = []
 ) => {
   const prismaQuery: any = {
     where: { status: 1 },
     orderBy: [],
     skip: 0,
     take: 100,
-    select: {},
   };
+  if (query.select || query.projections) {
+    prismaQuery["select"] = {};
+  }
   if (query.page && query.per_page) {
     if (!isNaN(parseInt(query.per_page, 10))) {
       prismaQuery.take = parseInt(query.per_page, 10);
@@ -47,7 +51,7 @@ export const expressRequestQueryToPrismaQuery = (
         const operator = key_parts[1];
 
         if (operator === "between") {
-          const values = query[k].split(",");
+          const values = query[key].split(",");
 
           prismaQuery.where[k] = {
             gte: values[0].match(/^\d{4}-\d{2}-\d{2}$/)
@@ -59,22 +63,31 @@ export const expressRequestQueryToPrismaQuery = (
           };
         } else if (operator === "in") {
           prismaQuery.where[k] = {
-            in: query[k].split(",").map((v: string) => parseValue(v)),
+            [operator]: query[key].split(",").map((v: string) => parseValue(v)),
           };
         } else {
-          prismaQuery.where[k][operator] = parseValue(query[k]);
+          prismaQuery.where[k] = {
+            [operator]: parseValue(query[key]),
+          };
         }
       } else if (key_parts.length === 1) {
-        prismaQuery.where[key] = !isNaN(parseInt(query[key], 10))
-          ? parseInt(query[key], 10)
-          : query[key];
+        prismaQuery.where[key] =
+          !isNaN(parseInt(query[key], 10)) && key !== "id"
+            ? parseInt(query[key], 10)
+            : query[key];
       }
-    } else if (key === "search") {
+    } else if (key === "search" && query.search) {
+      prismaQuery.where["OR"] = [];
       search_colums.forEach((s: string) => {
-        prismaQuery.where[s] = { contains: query.search };
+        prismaQuery.where["OR"].push({
+          [s]: {
+            contains: query.search,
+          },
+        });
       });
     }
   }
+  console.log(prismaQuery);
   return prismaQuery;
 };
 
@@ -82,11 +95,18 @@ export const aliasData = (data: any[], select: string) => {
   if (!select) {
     return data;
   }
+  const selects = select.split(",").filter((s) => s.includes(" as "));
+
   return data.map((d: any) => {
-    const selects = select.split(" as ");
-    if (selects.length > 1 && selects[0].trim() !== selects[1].trim()) {
-      d[selects[1].trim()] = d[selects[0].trim()];
-      delete d[selects[0].trim()];
+    for (const s of selects) {
+      if (s.split(" as ").length > 1) {
+        const key = s.split(" as ")[0].trim();
+        const alias = s.split(" as ")[1].trim();
+        if (alias !== key && d.hasOwnProperty(key)) {
+          d[alias] = d[key];
+          delete d[key];
+        }
+      }
     }
     return d;
   });
