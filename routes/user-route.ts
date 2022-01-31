@@ -247,7 +247,6 @@ router
         });
       }
       const {
-        username,
         password,
         firstname,
         lastname,
@@ -287,26 +286,28 @@ router
       }
 
       const hashedPwd = await bcrypt.hash(password, 10);
+      const data: any = {
+        password: hashedPwd,
+        firstname,
+        lastname,
+        fullname: firstname + " " + lastname,
+        appid,
+        twofactor,
+        email,
+        mobile,
+        address,
+        dob,
+        organizationid,
+        updatedBy: req.tokenData.userid,
+        updater: firstname + " " + lastname,
+      };
+      if (req.tokenData.level >= 100) {
+        data.level = level;
+        data.accstatus = accstatus;
+      }
       user = await prisma.user.update({
         where: { id: req.params.id },
-        data: {
-          username,
-          password: hashedPwd,
-          firstname,
-          lastname,
-          fullname: firstname + " " + lastname,
-          appid,
-          twofactor,
-          email,
-          mobile,
-          address,
-          dob,
-          organizationid,
-          accstatus,
-          level,
-          updatedBy: req.tokenData.userid,
-          updater: firstname + " " + lastname,
-        },
+        data,
       });
       let profile = req.body.profile;
       if (profile) {
