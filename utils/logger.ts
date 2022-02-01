@@ -3,6 +3,10 @@ import moment from "moment";
 import fs from "fs";
 
 const writeLogToFile = (message: string, level: string) => {
+  const logFolder = path.join(__dirname, "..", "logs");
+  if (!fs.existsSync(logFolder)) {
+    fs.mkdirSync(logFolder);
+  }
   const filePath = path.join(
     __dirname,
     "..",

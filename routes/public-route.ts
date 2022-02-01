@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { OK, SERVER_ERROR, UNAUTHORIZED } from "../constants/response-constant";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import logger from "../utils/log-utils";
+import logger from "../utils/logger";
 
 const router = express.Router();
 const prisma = new PrismaClient();

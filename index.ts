@@ -3,7 +3,7 @@ import cors from "cors";
 import express from "express";
 import init from "./init";
 import betterLoggin from "better-logging";
-import logger from "./utils/log-utils";
+import logger from "./utils/logger";
 
 import publicRoute from "./routes/public-route";
 import userRoute from "./routes/user-route";
@@ -29,6 +29,6 @@ app.get("/iamv2", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  logger.info(`Server listening on port ${PORT}`);
   init();
+  logger.info(`Server listening on port ${PORT}`);
 });

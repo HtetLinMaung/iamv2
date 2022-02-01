@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import { NextFunction, Request, Response } from "express";
-import logger from "../utils/log-utils";
+import logger from "../utils/logger";
 
 export default async function isAuth(
   req: Request,

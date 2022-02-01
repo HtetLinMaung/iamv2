@@ -1,7 +1,7 @@
 import express from "express";
 import { PrismaClient } from "@prisma/client";
 import isAuth from "../middlewares/is-auth";
-import { writeDataUrlToFile } from "../utils/file-utils";
+import { writeDataUrlToFile } from "../utils/file-writer";
 import {
   BAD_REQUEST,
   CREATED,
@@ -11,12 +11,14 @@ import {
   UNAUTHORIZED,
 } from "../constants/response-constant";
 import checkResourceAvailable from "../middlewares/is-resource";
-import logger from "../utils/log-utils";
+import logger from "../utils/logger";
 import bcrypt from "bcryptjs";
 import {
   aliasData,
   expressRequestQueryToPrismaQuery,
-} from "../utils/query-utils";
+} from "../utils/query-helper";
+import { data_to_workbook } from "../utils/excel-writer";
+import { jsObjectsToSqlInsert } from "../utils/export-helper";
 
 const prisma = new PrismaClient();
 const router = express.Router();
@@ -27,13 +29,14 @@ router
     try {
       logger.info("Get all users");
       logger.info(`Request Query: ${JSON.stringify(req.query)}`);
-      const isAvailable = await checkResourceAvailable(
-        req.tokenData,
+
+      const accessRights = await checkResourceAvailable(
+        req.tokenData.userid,
         "schema",
         "user",
         "r"
       );
-      if (!isAvailable) {
+      if (!accessRights) {
         return res.status(UNAUTHORIZED.code).json({
           ...UNAUTHORIZED,
           message: "You don't have permission to access this resource",
@@ -59,13 +62,49 @@ router
         prismaQuery.where.appid = req.tokenData.appid;
       }
       if (req.tokenData.level < 100) {
-        prismaQuery.where.createdBy = req.tokenData.userid;
+        prismaQuery.where.createdBy = {
+          in: [req.tokenData.userid, ...accessRights],
+        };
       }
       const users = await prisma.user.findMany(prismaQuery);
       const data = aliasData(
         users,
         (req.query.select as string) || (req.query.projections as string)
       );
+      if (req.query.export_by) {
+        const export_by = req.query.export_by as string;
+        const file_name = `${Date.now()}_${export_by}`;
+        if (
+          export_by.endsWith(".csv") ||
+          export_by.endsWith(".xls") ||
+          export_by.endsWith(".xlsx")
+        ) {
+          const workbook = data_to_workbook("Users", data);
+          if (!workbook) {
+            throw new Error("Error while creating workbook");
+          }
+          res.setHeader(
+            "Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          );
+          res.setHeader(
+            "Content-Disposition",
+            "attachment; filename=" + file_name
+          );
+
+          return workbook.xlsx.write(res).then(function () {
+            res.status(200).end();
+          });
+        } else if (export_by.endsWith(".sql")) {
+          const sql = jsObjectsToSqlInsert("Users", data);
+          res.setHeader("Content-Type", "text/plain");
+          res.setHeader(
+            "Content-Disposition",
+            "attachment; filename=" + file_name
+          );
+          res.send(sql);
+        }
+      }
       if (req.query.page && req.query.per_page) {
         const page = parseInt(req.query.page as string, 10);
         const per_page = parseInt(req.query.per_page as string, 10);
@@ -99,13 +138,14 @@ router
     try {
       logger.info("Creating user");
       logger.info(`Request Body: ${JSON.stringify(req.body)}`);
-      const isAvailable = await checkResourceAvailable(
-        req.tokenData,
+      const accessRights = await checkResourceAvailable(
+        req.tokenData.userid,
         "schema",
         "user",
         "c"
       );
-      if (!isAvailable) {
+
+      if (!accessRights) {
         return res.status(UNAUTHORIZED.code).json({
           ...UNAUTHORIZED,
           message: "You are not authorized to create user.",
@@ -189,13 +229,13 @@ router
       logger.info("Get user by id");
       logger.info(`Request Params: ${JSON.stringify(req.params)}`);
       logger.info(`Request Query: ${JSON.stringify(req.query)}`);
-      const isAvailable = await checkResourceAvailable(
-        req.tokenData,
+      const accessRights = await checkResourceAvailable(
+        req.tokenData.userid,
         "schema",
         "user",
         "r"
       );
-      if (!isAvailable) {
+      if (!accessRights) {
         return res.status(UNAUTHORIZED.code).json({
           ...UNAUTHORIZED,
           message: "You don't have permission to access this resource",
@@ -204,7 +244,7 @@ router
       const prismaQuery = expressRequestQueryToPrismaQuery(req.query);
       const where: any = { id: req.params.id, status: 1 };
       if (req.tokenData.level < 100) {
-        where.createdBy = req.tokenData.userid;
+        where.createdBy = { in: [req.tokenData.userid, ...accessRights] };
       }
       const user = await prisma.user.findFirst({
         select: prismaQuery.select,
@@ -234,13 +274,13 @@ router
       logger.info("Update user by id");
       logger.info(`Request Params: ${JSON.stringify(req.params)}`);
       logger.info(`Request Body: ${JSON.stringify(req.body)}`);
-      const isAvailable = await checkResourceAvailable(
-        req.tokenData,
+      const accessRights = await checkResourceAvailable(
+        req.tokenData.userid,
         "schema",
         "user",
         "u"
       );
-      if (!isAvailable) {
+      if (!accessRights) {
         return res.status(UNAUTHORIZED.code).json({
           ...UNAUTHORIZED,
           message: "You don't have permission to access this resource",
@@ -277,7 +317,7 @@ router
       }
       if (
         req.tokenData.level < 100 &&
-        user.createdBy !== req.tokenData.userid
+        ![req.tokenData.userid, ...accessRights].includes(user.createdBy)
       ) {
         return res.status(UNAUTHORIZED.code).json({
           ...UNAUTHORIZED,
@@ -327,13 +367,13 @@ router
     try {
       logger.info("Delete user by id");
       logger.info(`Request Params: ${JSON.stringify(req.params)}`);
-      const isAvailable = await checkResourceAvailable(
+      const accessRights = await checkResourceAvailable(
         req.tokenData,
         "schema",
         "user",
         "d"
       );
-      if (!isAvailable) {
+      if (!accessRights) {
         return res.status(UNAUTHORIZED.code).json({
           ...UNAUTHORIZED,
           message: "You don't have permission to access this resource",
@@ -351,7 +391,7 @@ router
       }
       if (
         req.tokenData.level < 100 &&
-        user.createdBy !== req.tokenData.userid
+        ![req.tokenData.userid, ...accessRights].includes(user.createdBy)
       ) {
         return res.status(UNAUTHORIZED.code).json({
           ...UNAUTHORIZED,

@@ -1,54 +1,4 @@
-import { PrismaClient } from "@prisma/client";
 import { getUserPrivileges } from "../services/query-services";
-
-const prisma = new PrismaClient();
-
-// export default async function checkResourceAvailable(
-//   tokenData: any,
-//   type: string,
-//   ref: string,
-//   operation: string
-// ) {
-//   const userRoles = await prisma.userRole.findMany({
-//     select: { roleid: true },
-//     where: {
-//       userid: tokenData.userid,
-//       status: 1,
-//     },
-//   });
-
-//   const roleIds = userRoles.map((r) => r.roleid);
-//   const resource = await prisma.resource.findFirst({
-//     select: {
-//       roleResources: {
-//         select: {
-//           permission: true,
-//         },
-//         where: {
-//           status: 1,
-//           roleid: { in: roleIds },
-//         },
-//       },
-//     },
-//     where: {
-//       appid: tokenData.appid,
-//       ref,
-//       status: 1,
-//       type,
-//     },
-//   });
-
-//   if (!resource) {
-//     return false;
-//   }
-
-//   for (const roleResource of resource.roleResources) {
-//     if (roleResource.permission.includes(operation)) {
-//       return true;
-//     }
-//   }
-//   return false;
-// }
 
 export default async function checkResourceAvailable(
   userid: string,
@@ -56,10 +6,10 @@ export default async function checkResourceAvailable(
   ref: string,
   operation: string
 ) {
-  const privileges = await getUserPrivileges(userid);
+  const privileges = await getUserPrivileges(userid, type, ref);
   for (const privilege of privileges) {
     if (!privilege.role) {
-      return false;
+      return null;
     }
     for (const roleResource of privilege.role.roleResources) {
       if (
@@ -67,10 +17,10 @@ export default async function checkResourceAvailable(
         roleResource.resource.type === type
       ) {
         if (roleResource.permission.includes(operation)) {
-          return true;
+          return roleResource.accessRights.map((r) => r.userid);
         }
       }
     }
   }
-  return false;
+  return null;
 }

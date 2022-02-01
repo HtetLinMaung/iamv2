@@ -1,5 +1,3 @@
-import logger from "./log-utils";
-
 const parseValue = (v: string) =>
   !isNaN(parseInt(v, 10)) ? parseInt(v, 10) : v;
 
@@ -43,6 +41,7 @@ export const expressRequestQueryToPrismaQuery = (
         "select",
         "projections",
         "search",
+        "export_by",
       ].includes(key)
     ) {
       const key_parts = key.split(":");

@@ -7,19 +7,6 @@ export const getUserPrivileges = async (
   type: string = "",
   ref: string = ""
 ) => {
-  let resource: any = {
-    select: {
-      name: true,
-      ref: true,
-      type: true,
-    },
-  };
-  if (type && ref) {
-    resource["where"] = {
-      type,
-      ref,
-    };
-  }
   const privileges = await prisma.userRole.findMany({
     where: {
       userid: userId,
@@ -32,7 +19,13 @@ export const getUserPrivileges = async (
           roleResources: {
             select: {
               permission: true,
-              resource,
+              resource: {
+                select: {
+                  name: true,
+                  ref: true,
+                  type: true,
+                },
+              },
               accessRights: {
                 select: {
                   userid: true,

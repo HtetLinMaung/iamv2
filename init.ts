@@ -1,11 +1,12 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import generator from "generate-password";
-import logger from "./utils/log-utils";
+import logger from "./utils/logger";
 
 const prisma = new PrismaClient();
 
 export default async function init() {
+  logger.info("Initializing database");
   const where = { appid: "iamv2", username: "admin" };
   let user = await prisma.user.findFirst({
     where,
