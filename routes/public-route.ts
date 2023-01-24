@@ -98,6 +98,7 @@ router.post("/login", async (req, res) => {
         userid: user.id,
         appid: user.appid,
         level: user.level,
+        fullname: user.fullname,
       },
       process.env.SECRET || "iamv2",
       {

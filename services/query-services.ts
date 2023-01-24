@@ -39,3 +39,13 @@ export const getUserPrivileges = async (
   });
   return privileges;
 };
+
+export const getUserById = async (userId: string) => {
+  const user = await prisma.user.findFirst({
+    where: {
+      id: userId,
+      status: 1,
+    },
+  });
+  return user;
+};

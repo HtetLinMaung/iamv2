@@ -7,6 +7,7 @@ import logger from "./utils/logger";
 
 import publicRoute from "./routes/public-route";
 import userRoute from "./routes/user-route";
+import roleRoute from "./routes/role-route";
 
 betterLoggin(console);
 
@@ -21,6 +22,7 @@ app.use(express.json());
 app.use("/iamv2/profile", express.static("public"));
 app.use("/iamv2", publicRoute);
 app.use("/iamv2/users", userRoute);
+app.use("/iamv2/roles", roleRoute);
 
 app.get("/iamv2", (req, res) => {
   res.send(

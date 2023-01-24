@@ -1,7 +1,5 @@
-import express from "express";
 import { PrismaClient } from "@prisma/client";
-import isAuth from "../middlewares/is-auth";
-import { writeDataUrlToFile } from "../utils/file-writer";
+import express from "express";
 import {
   BAD_REQUEST,
   CREATED,
@@ -10,30 +8,30 @@ import {
   SERVER_ERROR,
   UNAUTHORIZED,
 } from "../constants/response-constant";
+import isAuth from "../middlewares/is-auth";
 import checkResourceAvailable from "../middlewares/is-resource";
+import { data_to_workbook } from "../utils/excel-writer";
+import { jsObjectsToSqlInsert } from "../utils/export-helper";
 import logger from "../utils/logger";
-import bcrypt from "bcryptjs";
 import {
   aliasData,
   expressRequestQueryToPrismaQuery,
 } from "../utils/query-helper";
-import { data_to_workbook } from "../utils/excel-writer";
-import { jsObjectsToSqlInsert } from "../utils/export-helper";
 
-const prisma = new PrismaClient();
 const router = express.Router();
+const prisma = new PrismaClient();
 
 router
   .route("/")
   .get(isAuth, async (req, res) => {
     try {
-      logger.info("Get all users");
+      logger.info("Get all roles");
       logger.info(`Request Query: ${JSON.stringify(req.query)}`);
 
       const accessRights = await checkResourceAvailable(
         req.tokenData.userid,
         "schema",
-        "user",
+        "role",
         "r"
       );
       if (!accessRights) {
@@ -42,33 +40,30 @@ router
           message: "You don't have permission to access this resource",
         });
       }
+
       const prismaQuery = expressRequestQueryToPrismaQuery(req.query, [
         "id",
-        "username",
-        "fullname",
-        "email",
-        "mobile",
-        "accstatus",
         "appid",
         "createdBy",
         "updatedBy",
         "creater",
         "updater",
-        "address",
-        "dob",
+        "name",
+        "description",
       ]);
 
       if (req.tokenData.appid !== "iamv2") {
-        prismaQuery.where["appid"] = req.tokenData.appid;
+        prismaQuery.where.appid = req.tokenData.appid;
       }
       if (req.tokenData.level < 100) {
         prismaQuery.where.createdBy = {
           in: [req.tokenData.userid, ...accessRights],
         };
       }
-      const users = await prisma.user.findMany(prismaQuery);
+
+      const roles = await prisma.role.findMany(prismaQuery);
       const data = aliasData(
-        users,
+        roles,
         (req.query.select as string) || (req.query.projections as string)
       );
       if (req.query.export_by) {
@@ -79,7 +74,7 @@ router
           export_by.endsWith(".xls") ||
           export_by.endsWith(".xlsx")
         ) {
-          const workbook = data_to_workbook("Users", data);
+          const workbook = data_to_workbook("Roles", data);
           if (!workbook) {
             throw new Error("Error while creating workbook");
           }
@@ -92,18 +87,18 @@ router
             "attachment; filename=" + file_name
           );
 
-          logger.info("Exporting users to excel");
+          logger.info("Exporting roles to excel");
           return workbook.xlsx.write(res).then(function () {
             res.status(200).end();
           });
         } else if (export_by.endsWith(".sql")) {
-          const sql = jsObjectsToSqlInsert("Users", data);
+          const sql = jsObjectsToSqlInsert("Roles", data);
           res.setHeader("Content-Type", "text/plain");
           res.setHeader(
             "Content-Disposition",
             "attachment; filename=" + file_name
           );
-          logger.info("Exporting users to sql");
+          logger.info("Exporting roles to sql");
           return res.send(sql);
         }
       }
@@ -113,7 +108,7 @@ router
         delete prismaQuery.take;
         delete prismaQuery.skip;
         delete prismaQuery.select;
-        const total = await prisma.user.count(prismaQuery);
+        const total = await prisma.role.count(prismaQuery);
 
         const page_counts = Math.ceil(total / per_page);
         return res.json({
@@ -130,7 +125,7 @@ router
         ...OK,
         data,
       });
-      logger.info("get all users success");
+      logger.info("get all roles success");
     } catch (err) {
       logger.error(`Error: ${err}`);
       res.status(SERVER_ERROR.code).json(SERVER_ERROR);
@@ -138,86 +133,56 @@ router
   })
   .post(isAuth, async (req, res) => {
     try {
-      logger.info("Creating user");
+      logger.info("Create role");
       logger.info(`Request Body: ${JSON.stringify(req.body)}`);
       const accessRights = await checkResourceAvailable(
         req.tokenData.userid,
         "schema",
-        "user",
+        "role",
         "c"
       );
 
       if (!accessRights) {
         return res.status(UNAUTHORIZED.code).json({
           ...UNAUTHORIZED,
-          message: "You are not authorized to create user.",
+          message: "You don't have permission to access this resource",
         });
       }
-
-      const {
-        username,
-        password,
-        firstname,
-        lastname,
-        twofactor,
-        email,
-        mobile,
-        address,
-        dob,
-        organizationid,
-        accstatus,
-      } = req.body;
+      const { name, description } = req.body;
 
       let appid: string = req.tokenData.appid;
       if (req.tokenData.appid === "iamv2") {
         appid = req.body.appid;
       }
-      let user = await prisma.user.findFirst({
+      let role = await prisma.role.findFirst({
         where: {
+          name,
           appid,
-          username,
           status: 1,
         },
       });
-      if (user) {
+      if (role) {
         return res.status(BAD_REQUEST.code).json({
           ...BAD_REQUEST,
-          message: "User already exists",
+          message: "Role already exist.",
         });
       }
-      const hashedPwd = await bcrypt.hash(password, 10);
-      user = await prisma.user.create({
+      role = await prisma.role.create({
         data: {
-          username,
-          password: hashedPwd,
-          firstname,
-          lastname,
-          fullname: firstname + " " + lastname,
+          name,
+          description,
           appid,
-          twofactor,
-          email,
-          mobile,
-          address,
-          dob,
-          organizationid,
-          accstatus,
           createdBy: req.tokenData.userid,
           creater: req.tokenData.fullname,
           updatedBy: req.tokenData.userid,
           updater: req.tokenData.fullname,
         },
       });
-      let profile = req.body.profile;
-      if (profile) {
-        profile = writeDataUrlToFile(profile, user.id);
-        user = await prisma.user.update({
-          where: { id: user.id },
-          data: { profile },
-        });
-      }
-
-      res.status(CREATED.code).json({ ...CREATED, data: user });
-      logger.info("User created successfully");
+      res.status(CREATED.code).json({
+        ...CREATED,
+        data: role,
+      });
+      logger.info("Create role success");
     } catch (err) {
       logger.error(`Error: ${err}`);
       res.status(SERVER_ERROR.code).json(SERVER_ERROR);
@@ -228,13 +193,13 @@ router
   .route("/:id")
   .get(isAuth, async (req, res) => {
     try {
-      logger.info("Get user by id");
+      logger.info("Get role");
       logger.info(`Request Params: ${JSON.stringify(req.params)}`);
       logger.info(`Request Query: ${JSON.stringify(req.query)}`);
       const accessRights = await checkResourceAvailable(
         req.tokenData.userid,
         "schema",
-        "user",
+        "role",
         "r"
       );
       if (!accessRights) {
@@ -248,25 +213,23 @@ router
       if (req.tokenData.level < 100) {
         where.createdBy = { in: [req.tokenData.userid, ...accessRights] };
       }
-      const user = await prisma.user.findFirst({
-        select: prismaQuery.select,
+      const role = await prisma.role.findFirst({
         where,
+        select: prismaQuery.select,
       });
-
-      if (!user) {
-        return res.status(NOT_FOUND.code).json({
-          ...NOT_FOUND,
-          message: "User not found",
-        });
+      if (!role) {
+        return res
+          .status(NOT_FOUND.code)
+          .json({ ...NOT_FOUND, message: "Role not found" });
       }
       res.json({
         ...OK,
         data: aliasData(
-          [user],
+          [role],
           (req.query.select as string) || (req.query.projections as string)
         )[0],
       });
-      logger.info("get user by id success");
+      logger.info("Get role success");
     } catch (err) {
       logger.error(`Error: ${err}`);
       res.status(SERVER_ERROR.code).json(SERVER_ERROR);
@@ -274,13 +237,13 @@ router
   })
   .put(isAuth, async (req, res) => {
     try {
-      logger.info("Update user by id");
+      logger.info("Update role");
       logger.info(`Request Params: ${JSON.stringify(req.params)}`);
       logger.info(`Request Body: ${JSON.stringify(req.body)}`);
       const accessRights = await checkResourceAvailable(
         req.tokenData.userid,
         "schema",
-        "user",
+        "role",
         "u"
       );
       if (!accessRights) {
@@ -289,79 +252,48 @@ router
           message: "You don't have permission to access this resource",
         });
       }
-      const {
-        password,
-        firstname,
-        lastname,
-        twofactor,
-        email,
-        mobile,
-        address,
-        dob,
-        organizationid,
-        accstatus,
-        level,
-      } = req.body;
+      const { name, description } = req.body;
       let appid: string = req.tokenData.appid;
       if (req.tokenData.appid === "iamv2") {
         appid = req.body.appid;
       }
-      let user = await prisma.user.findFirst({
+      let role = await prisma.role.findFirst({
         where: {
           id: req.params.id,
           status: 1,
         },
       });
-      if (!user) {
-        return res.status(NOT_FOUND.code).json({
-          ...NOT_FOUND,
-          message: "User not found",
-        });
+      if (!role) {
+        return res
+          .status(NOT_FOUND.code)
+          .json({ ...NOT_FOUND, message: "Role not found" });
       }
       if (
         req.tokenData.level < 100 &&
-        ![req.tokenData.userid, ...accessRights].includes(user.createdBy)
+        ![req.tokenData.userid, ...accessRights].includes(role.createdBy)
       ) {
         return res.status(UNAUTHORIZED.code).json({
           ...UNAUTHORIZED,
           message: "You don't have permission to access this resource",
         });
       }
-
-      const hashedPwd = await bcrypt.hash(password, 10);
-      const data: any = {
-        password: hashedPwd,
-        firstname,
-        lastname,
-        fullname: firstname + " " + lastname,
-        appid,
-        twofactor,
-        email,
-        mobile,
-        address,
-        dob,
-        organizationid,
-        updatedBy: req.tokenData.userid,
-        updater: req.tokenData.fullname,
-      };
-      if (req.tokenData.level >= 100) {
-        data.level = level;
-        data.accstatus = accstatus;
-      }
-      user = await prisma.user.update({
-        where: { id: req.params.id },
-        data,
+      role = await prisma.role.update({
+        where: {
+          id: req.params.id,
+        },
+        data: {
+          name,
+          description,
+          appid,
+          updatedBy: req.tokenData.userid,
+          updater: req.tokenData.fullname,
+        },
       });
-      let profile = req.body.profile;
-      if (profile) {
-        profile = writeDataUrlToFile(profile, user.id);
-        user = await prisma.user.update({
-          where: { id: user.id },
-          data: { profile },
-        });
-      }
-      res.json({ ...OK, data: user });
-      logger.info("Update user by id success");
+      res.json({
+        ...OK,
+        data: role,
+      });
+      logger.info("Update role success");
     } catch (err) {
       logger.error(`Error: ${err}`);
       res.status(SERVER_ERROR.code).json(SERVER_ERROR);
@@ -369,12 +301,13 @@ router
   })
   .delete(isAuth, async (req, res) => {
     try {
-      logger.info("Delete user by id");
+      logger.info("Delete role");
       logger.info(`Request Params: ${JSON.stringify(req.params)}`);
+
       const accessRights = await checkResourceAvailable(
-        req.tokenData,
+        req.tokenData.userid,
         "schema",
-        "user",
+        "role",
         "d"
       );
       if (!accessRights) {
@@ -383,104 +316,43 @@ router
           message: "You don't have permission to access this resource",
         });
       }
-
-      const user = await prisma.user.findFirst({
-        where: { id: req.params.id, status: 1 },
+      let role = await prisma.role.findFirst({
+        where: {
+          id: req.params.id,
+          status: 1,
+        },
       });
-      if (!user) {
-        return res.status(NOT_FOUND.code).json({
-          ...NOT_FOUND,
-          message: "User not found",
-        });
+      if (!role) {
+        return res
+          .status(NOT_FOUND.code)
+          .json({ ...NOT_FOUND, message: "Role not found" });
       }
       if (
         req.tokenData.level < 100 &&
-        ![req.tokenData.userid, ...accessRights].includes(user.createdBy)
+        ![req.tokenData.userid, ...accessRights].includes(role.createdBy)
       ) {
         return res.status(UNAUTHORIZED.code).json({
           ...UNAUTHORIZED,
           message: "You don't have permission to access this resource",
         });
       }
-      await prisma.user.update({
-        data: { status: 0 },
-        where: { id: req.params.id },
+      role = await prisma.role.update({
+        where: {
+          id: req.params.id,
+        },
+        data: {
+          status: 0,
+        },
       });
-      res.sendStatus(204);
-      logger.info("Delete user by id success");
+      res.json({
+        ...OK,
+        data: role,
+      });
+      logger.info("Delete role success");
     } catch (err) {
       logger.error(`Error: ${err}`);
       res.status(SERVER_ERROR.code).json(SERVER_ERROR);
     }
   });
-
-router.route("/:userid/user-roles").put(isAuth, async (req, res) => {
-  try {
-    logger.info("Update user roles");
-    logger.info(`Request Params: ${JSON.stringify(req.params)}`);
-    logger.info(`Request Body: ${JSON.stringify(req.body)}`);
-    let accessRights = await checkResourceAvailable(
-      req.tokenData.userid,
-      "schema",
-      "userrole",
-      "cu"
-    );
-    if (!accessRights) {
-      return res.status(UNAUTHORIZED.code).json({
-        ...UNAUTHORIZED,
-        message: "You don't have permission to access this resource",
-      });
-    }
-    accessRights = await checkResourceAvailable(
-      req.tokenData.userid,
-      "schema",
-      "user",
-      "r"
-    );
-    if (!accessRights) {
-      return res.status(UNAUTHORIZED.code).json({
-        ...UNAUTHORIZED,
-        message: "You don't have permission to access this resource",
-      });
-    }
-    const { roles } = req.body;
-    const user = await prisma.user.findFirst({
-      where: { id: req.params.userid, status: 1 },
-    });
-    if (!user) {
-      return res.status(NOT_FOUND.code).json({
-        ...NOT_FOUND,
-        message: "User not found",
-      });
-    }
-    if (
-      req.tokenData.level < 100 &&
-      ![req.tokenData.userid, ...accessRights].includes(user.createdBy)
-    ) {
-      return res.status(UNAUTHORIZED.code).json({
-        ...UNAUTHORIZED,
-        message: "You don't have permission to access this resource",
-      });
-    }
-    let userRoles = await prisma.userRole.updateMany({
-      where: { userid: req.params.userid, status: 1 },
-      data: { status: 0 },
-    });
-
-    userRoles = await prisma.userRole.createMany({
-      data: roles.map((role: string) => {
-        return {
-          userid: req.params.userid,
-          roleid: role,
-          status: 1,
-        };
-      }),
-    });
-    res.json({ ...OK, data: userRoles });
-  } catch (err) {
-    logger.error(`Error: ${err}`);
-    res.status(SERVER_ERROR.code).json(SERVER_ERROR);
-  }
-});
 
 export default router;
